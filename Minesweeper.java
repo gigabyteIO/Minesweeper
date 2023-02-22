@@ -7,6 +7,8 @@ import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.RadioMenuItem;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.paint.Color;
@@ -30,11 +32,12 @@ public class Minesweeper extends Application {
 	
 	private GraphicsContext g; 		// A graphics context for drawing on the canvas.
 	private boolean gameInProgress; // Represents if a game is currently in progress.
+	private boolean shiftPressed;   // 
 	
 	
 	/**
 	 * The start() method of a JavaFX application sets up the GUI.
-	 * and can initialize global variables.
+	 * and initialize global variables.
 	 */
 	public void start(Stage stage) throws Exception {
 		Canvas canvas = new Canvas(600, 600);
@@ -49,11 +52,12 @@ public class Minesweeper extends Application {
 		stage.show();
 		stage.setResizable(false);
 		
+		scene.setOnKeyPressed(evt -> doKeyPressed(evt));
+		scene.setOnKeyReleased(evt -> doKeyReleased(evt));
 		canvas.setOnMousePressed( evt -> doMousePressed(evt));
 		
 		setDifficulty("beginner"); // Initial difficulty is set to beginner.
-		initialize();
-		//draw();
+		draw();
 	}
 	
 	/**
@@ -69,24 +73,40 @@ public class Minesweeper extends Application {
 		boxHeight = g.getCanvas().getHeight() / ROWS;
 		
 		double lineX, lineY, rectX, rectY;
-		lineX = boxWidth;
-		lineY = boxHeight;
+		lineX = 0;
+		lineY = 0;
 		rectX = 0;
 		rectY = 0;
 		for(int row = 0; row < ROWS; row++) {
+			
 			for(int col = 0; col < COLUMNS; col++) {
 				
-				// Draw vertical lines.
+				/***** DRAW BOXES *****/
+				// Hidden = DarkGreen
+				if(state[row][col] == BoxState.HIDDEN) {
+					g.setFill(Color.DARKGREEN);
+					g.fillRect(rectX , rectY, boxWidth , boxHeight );
+				}
+				// Shown = LightGreen
+				else if(state[row][col] == BoxState.SHOWN) {
+					g.setFill(Color.LIMEGREEN);
+					g.fillRect(rectX , rectY, boxWidth, boxHeight);
+					int m = checkForMines(row, col);
+						if(m > 0)
+							g.strokeText(Integer.toString(m), rectX + (boxWidth * .4), rectY + (boxHeight * .6));
+				}
+				// Flagged = PINK
+				else if(state[row][col] == BoxState.FLAGGED) {
+					g.setFill(Color.HOTPINK);
+					g.fillRect(rectX, rectY, boxWidth, boxHeight);
+				}
+				
+				/***** DRAW VERTICAL LINES *****/
 				g.setStroke(Color.BLACK);
 				g.strokeLine(lineX, 0, lineX, g.getCanvas().getHeight());
 				
-				// Draw horizontal lines.
+				/***** DRAW HORIZONTAL LINES *****/
 				g.strokeLine(0, lineY, g.getCanvas().getWidth(), lineY);
-				
-				// Draw boxes.
-				g.setFill(Color.DARKGREEN);
-				if(state[row][col] == BoxState.HIDDEN)
-					g.fillRect(rectX + 1, rectY, boxWidth - 1, boxHeight - 1);
 					
 				lineX += boxWidth;
 				rectX += boxWidth;
@@ -103,7 +123,8 @@ public class Minesweeper extends Application {
 	}
 	
 	/**
-	 * Initializes all global variables and draw the board.
+	 * Initializes all global variables and draws the board. This is called by the
+	 *  setDifficulty() method.
 	 */
 	private void initialize() {
 		
@@ -114,7 +135,10 @@ public class Minesweeper extends Application {
 		mines = new boolean[ROWS][COLUMNS];
 		state = new BoxState[ROWS][COLUMNS];
 		
+		gameInProgress = true;
+		
 		// Set mines.
+		placeMines(NUMBER_OF_MINES);
 		
 		// Initial state is hidden.
 		for(int row = 0; row < ROWS; row++) {
@@ -123,8 +147,32 @@ public class Minesweeper extends Application {
 			}
 		}
 		
-		draw();
-		
+		calculateBounds();	
+		draw();		
+	}
+
+	/**
+	 * Places the mines the the mines array.
+	 * @param numOfMines The total number of mines to be placed.
+	 */
+	private void placeMines(int numOfMines) {
+		int randomRow;
+		int randomColumn;
+
+		int i = 0;
+		while(i < numOfMines) {
+			randomRow = (int) (Math.random() * ROWS);
+			randomColumn = (int) (Math.random() * COLUMNS);
+
+			if(mines[randomRow][randomColumn] == false) {
+				mines[randomRow][randomColumn] = true;
+				i++;				
+				// Debug statement.
+				System.out.println("Mine " + i + ": [" + randomRow + ", " + randomColumn + "]");
+			}
+			else {
+			}
+		}	
 	}
 	
 	/**
@@ -138,17 +186,258 @@ public class Minesweeper extends Application {
 	 * 
 	 * @param evt
 	 */
+	private void doKeyPressed(KeyEvent evt) {
+		KeyCode key = evt.getCode();
+		System.out.println("Key Pressed: " + key);	
+		
+		if(key == KeyCode.SHIFT) {
+			shiftPressed = true;
+		}
+	}
+	
+	/**
+	 * 
+	 * @param evt
+	 */
+	private void doKeyReleased(KeyEvent evt) {
+		KeyCode key = evt.getCode();
+		System.out.println("Key Released: " + key);
+		
+		if(key == KeyCode.SHIFT) {
+			shiftPressed = false;
+		}
+	}
+	
+	/**
+	 * 
+	 * @param evt
+	 */
 	private void doMousePressed(MouseEvent evt ) {
 		double x, y;
 		
 		x = evt.getX();
 		y = evt.getY();
 		
+		int row, col;
+		row = getRow(y);
+		col = getCol(x);
+		
+		if(state[row][col] == BoxState.HIDDEN && !shiftPressed && mines[row][col] == false)
+			state[row][col] = BoxState.SHOWN;
+		else if( (state[row][col] == BoxState.HIDDEN) && shiftPressed)
+			state[row][col] = BoxState.FLAGGED;
+		else if( (state[row][col] == BoxState.FLAGGED) && shiftPressed)
+			state[row][col] = BoxState.HIDDEN;			
+		
+		draw();
+		
 		// Debug statements.
-		System.out.println("X: " + x + "Y: " + y);
-		System.out.println("Row: " + getRow(y));
-		System.out.println("Column: " + getCol(x));
+		//System.out.println("X: " + x + "Y: " + y);
+		//System.out.println("Row: " + getRow(y));
+		//System.out.println("Column: " + getCol(x));
 	}	
+	
+	
+	private int checkForMines(int row, int column) {
+		int mine = 0;
+		
+		/********** CORNERS (3 checks) **********/
+		/*** Upper left corner. ***/
+		if(row == 0 && column == 0) {
+			// 1) Right.
+			// row col + 1
+			if(mines[row][column + 1] == true)
+				mine += 1;
+			// 2) Lower right.
+			// row + 1 col + 1
+			if(mines[row + 1][column + 1] == true)
+				mine += 1;
+			// 3) Lower.		
+			// row + 1 col
+			if(mines[row + 1][column] == true)
+				mine += 1;
+		}
+		/*** Lower left corner. ***/
+		else if(row == ROWS && column == 0) {
+			// 1) Upper.
+			// row - 1 col
+			if(mines[row - 1][column] == true)
+				mine += 1;
+			// 2) Upper right.
+			// row - 1 col + 1
+			if(mines[row - 1][column + 1] == true)
+				mine += 1;
+			// 3) Right.
+			// row col + 1
+			if(mines[row][column + 1] == true)
+				mine += 1;
+		}
+		/*** Upper right corner. ***/
+		else if(row == 0 && column == COLUMNS) {
+			// 1) Left.
+			// row col - 1
+			if(mines[row][column - 1] == true)
+				mine += 1;
+			// 2) Lower left.
+			// row + 1 col - 1
+			if(mines[row + 1][column - 1] == true)
+				mine += 1;
+			// 3) Lower.
+			// row + 1 col
+			if(mines[row + 1][column] == true)
+				mine += 1;
+		}
+		/*** Lower right corner. ***/
+		else if(row == ROWS && column == COLUMNS) {
+			// 1) Upper.
+			// row - 1 col
+			if(mines[row - 1][column] == true)
+				mine += 1;
+			// 2) Upper left.
+			// row - 1 col - 1
+			if(mines[row - 1][column - 1] == true)
+				mine += 1;
+			// 3) Left.
+			// row col - 1
+			if(mines[row][column - 1] == true)
+				mine += 1;
+		}
+		
+		/********** SIDES (5 checks) **********/
+		
+		/*** Left side. ***/
+		else if(column == 0 && (row > 0) && (row < ROWS - 1)) {
+			// 1) Upper.
+			// row - 1 col
+			if(mines[row - 1][column] == true)
+				mine += 1;
+			// 2) Upper right.
+			// row - 1 col + 1
+			if(mines[row - 1][column + 1] == true)
+				mine += 1;
+			// 3) Right.
+			// row col + 1
+			if(mines[row][column + 1] == true)
+				mine += 1;
+			// 4) Lower right.
+			// row + 1 col + 1
+			if(mines[row + 1][column + 1] == true)
+				mine += 1;
+			// 5) Lower.
+			// row + 1 col
+			if(mines[row + 1][column] == true)
+				mine += 1;
+		}
+		
+		/*** Upper. ***/
+		else if( row == 0 && (column > 0) && (column < COLUMNS - 1) ) {
+			// 1) Left.
+			// row col - 1
+			if(mines[row][column - 1] == true)
+				mine += 1;
+			// 2) Lower left.
+			// row + 1 col - 1
+			if(mines[row + 1][column - 1] == true)
+				mine += 1;
+			// 3) Lower.
+			// row + 1 col
+			if(mines[row + 1][column] == true)
+				mine += 1;
+			// 4) Lower right.
+			// row + 1 col + 1
+			if(mines[row + 1][column + 1] == true)
+				mine += 1;
+			// 5) Right.
+			// row col + 1
+			if(mines[row][column + 1] == true)
+				mine += 1;
+		}
+		
+		/*** Right side. ***/
+		else if(column == COLUMNS && (row > 0 && row < ROWS)) {
+			// 1) Upper.
+			// row - 1 col
+			if(mines[row - 1][column] == true)
+				mine += 1;
+			// 2) Upper left.
+			// row - 1 col - 1
+			if(mines[row - 1][column - 1] == true)
+				mine += 1;
+			// 3) Left.
+			// row col - 1
+			if(mines[row][column - 1] == true)
+				mine += 1;
+			// 4) Lower left.
+			// row + 1 col - 1
+			if(mines[row + 1][column - 1] == true)
+				mine += 1;
+			// 5) Lower.
+			// row + 1 col
+			if(mines[row + 1][column] == true)
+				mine += 1;
+		}
+		
+		/*** Lower. ***/
+		else if(row == ROWS && (column > 0 && column < COLUMNS)) {
+			// 1) Right.
+			// row col + 1
+			if(mines[row][column + 1] == true)
+				mine += 1;
+			// 2) Upper right.
+			// row - 1 col + 1
+			if(mines[row - 1][column + 1] == true)
+				mine += 1;
+			// 3) Upper.
+			// row - 1 col
+			if(mines[row - 1][column] == true)
+				mine += 1;
+			// 4) Upper left.
+			// row - 1 col - 1
+			if(mines[row - 1][column - 1] == true)
+				mine += 1;
+			// 5) Left.
+			// row col - 1
+			if(mines[row][column - 1] == true)
+				mine += 1;
+		}		
+		/*** Rest of boxes. (8 checks) ***/
+		else if( row > 0 && row < ROWS - 1 && column > 0 && column < COLUMNS - 1) {			
+			// 1) Upper left.
+			// row - 1 col - 1
+			if(mines[row - 1][column - 1] == true)
+				mine += 1;			
+			// 2) Upper.
+			// row - 1 col
+			if(mines[row - 1][column] == true)
+				mine += 1;			
+			// 3) Upper right.
+			// row - 1 col + 1
+			if(mines[row - 1][column + 1] == true)
+				mine += 1;			
+			// 4) Right.
+			// row col + 1
+			if(mines[row][column + 1] == true)
+				mine += 1;			
+			// 5) Lower right.
+			// row + 1 col + 1
+			if(mines[row + 1][column + 1] == true)
+				mine += 1;			
+			// 6) Lower.
+			// row + 1 col
+			if(mines[row + 1][column] == true)
+				mine += 1;			
+			// 7) Lower left.
+			// row + 1 col - 1
+			if(mines[row + 1][column - 1] == true)
+				mine += 1;			
+			// 8) Left.
+			// row col - 1
+			if(mines[row][column - 1] == true)
+				mine += 1;			
+		}
+		
+		return mine;
+	}
 	
 	/**
 	 * Sets the rows/columns/mines to the correct values based on the difficulty.
@@ -179,19 +468,44 @@ public class Minesweeper extends Application {
 			NUMBER_OF_MINES = (int) ((ROWS * COLUMNS) * .2063); // (20.63%)
 		}
 		
+		initialize(); // Initialize the new game, with the new difficulty.
 		System.out.println("Number of mines: " + NUMBER_OF_MINES); // Debug statement.
-		initialize();
-		calculateBounds();
-		draw();
 	}
+	
+    /**
+     * Calculates bounds based on the amount of rows and columns.
+     */
+    private void calculateBounds() {
+    	
+    	double boxWidth = g.getCanvas().getWidth() / COLUMNS;
+    	double boxHeight = g.getCanvas().getHeight() / ROWS;
+    	
+    	rowBounds = new double[ROWS];
+		columnBounds = new double[COLUMNS];
+		
+		//System.out.println("Bounds:"); // Debug statement.
+		double y = 0;
+		for(int row = 0; row < ROWS; row++) {
+			y += boxHeight;
+			rowBounds[row] = y;	
+			//System.out.println("Row " + row + ": " + y); // Debug statement.
+		}
+		
+		double x = 0;
+		for(int col = 0; col < COLUMNS; col++) {
+			x += boxWidth;
+			columnBounds[col] = x;
+			//System.out.println("Column " + col + ": " + x); // Debug statement.
+		}
+    }
 	
 	/**
      * Returns the row number given a y-coordinate.
      * @param y The y-coordinate of the mouse press.
      * @return The row number of the click.
      */
-    private double getRow(double y) {
-    	double row = 0;	
+    private int getRow(double y) {
+    	int row = 0;	
     	
     	for(int i = 0; i < rowBounds.length; i++) {   		
     		if(y < rowBounds[i]) {
@@ -207,8 +521,8 @@ public class Minesweeper extends Application {
      * @param x The x-coordinate of the mouse press.
      * @return The column number of the click. 
      */
-    private double getCol(double x) {
-    	double col = 0; 
+    private int getCol(double x) {
+    	int col = 0; 
     	
     	for(int i = 0; i < columnBounds.length; i++) {   		
     		if(x < columnBounds[i]) {
@@ -217,33 +531,6 @@ public class Minesweeper extends Application {
     		}
     	}   
     	return col;
-    }
-    
-    /**
-     * Calculates bounds based on the amount of rows and columns.
-     */
-    private void calculateBounds() {
-    	
-    	double boxWidth = g.getCanvas().getWidth() / COLUMNS;
-    	double boxHeight = g.getCanvas().getHeight() / ROWS;
-    	
-    	rowBounds = new double[ROWS];
-		columnBounds = new double[COLUMNS];
-		
-		System.out.println("Bounds:"); // Debug statement.
-		double y = 0;
-		for(int row = 0; row < ROWS; row++) {
-			y += boxHeight;
-			rowBounds[row] = y;	
-			System.out.println("Row " + row + ": " + y);
-		}
-		
-		double x = 0;
-		for(int col = 0; col < COLUMNS; col++) {
-			x += boxWidth;
-			columnBounds[col] = x;
-			System.out.println("Column " + col + ": " + x);
-		}
     }
     
     /**
